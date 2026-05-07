@@ -5,6 +5,7 @@ mod doctor;
 mod eject;
 mod ls;
 mod midi;
+mod mount;
 mod mtp_session;
 mod output;
 mod pull;
@@ -152,6 +153,21 @@ pub fn run() -> Result<(), AppError> {
                 args.new_name.as_str(),
             )?;
             output::write_rename(&report, cli.json)
+        }
+        Command::Mount(args) => {
+            let report = mount::run_mount(
+                cli.device.as_deref(),
+                cli.auto_connect,
+                args.mountpoint.as_deref(),
+                args.read_only,
+                !args.no_open,
+                !cli.json,
+            )?;
+            output::write_mount(&report, cli.json)
+        }
+        Command::Unmount(args) => {
+            let report = mount::run_unmount(args.mountpoint.as_deref(), args.force)?;
+            output::write_unmount(&report, cli.json)
         }
         Command::Eject => {
             let report = eject::run_eject(cli.device.as_deref(), cli.auto_connect)?;

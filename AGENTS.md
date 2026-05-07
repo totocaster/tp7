@@ -10,6 +10,10 @@
   - `cargo clippy -- -D warnings`
   - `cargo test`
   - at least one relevant `cargo run -- ...` command against the current feature.
+- Finder mounting is part of the default binary. On macOS, the default Rust
+  build requires macFUSE or Fuse-T development metadata (`fuse.pc`). If that is
+  unavailable, report the blocker and use `--features fuser/macos-no-mount`
+  only as a compile-only fallback; it does not validate real mounting.
 - When the TP-7 is connected and write-path behavior changes, prefer
   `scripts/hardware-smoke.sh` for the device smoke. It uses `/memo` by default;
   override with `TP7_SMOKE_REMOTE_DIR=/existing/folder` if needed.

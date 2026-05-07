@@ -7,6 +7,8 @@ Thanks for considering a contribution. `tp7` is a small hardware-facing CLI, so 
 - Read the top-level `README.md` for user-facing behavior and install instructions.
 - Review `docs/spec.md` and `docs/tp7-handshake.md` before changing protocol behavior.
 - Use the pinned Rust toolchain from `rust-toolchain.toml`.
+- Install macFUSE or Fuse-T development metadata before building the default
+  macOS target, because Finder mounting is part of the normal binary.
 
 ## Development Workflow
 

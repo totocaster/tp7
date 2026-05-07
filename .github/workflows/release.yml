@@ -9,6 +9,8 @@ env:
   CARGO_TERM_COLOR: always
   RUST_VERSION: 1.88.0
   BIN_NAME: tp7
+  PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/opt/homebrew/lib/pkgconfig
+  PKG_CONFIG_ALLOW_CROSS: "1"
 
 jobs:
   verify:
@@ -24,6 +26,11 @@ jobs:
           toolchain: ${{ env.RUST_VERSION }}
           override: true
           components: rustfmt, clippy
+
+      - name: Install FUSE build dependencies
+        run: |
+          brew install pkgconf
+          brew install --cask macfuse
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -76,6 +83,11 @@ jobs:
 
       - name: Add compilation targets
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Install FUSE build dependencies
+        run: |
+          brew install pkgconf
+          brew install --cask macfuse
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -262,7 +274,7 @@ jobs:
           if git status --porcelain | grep .; then
             git config user.name "tp7-bot"
             git config user.email "tp7-bot@users.noreply.github.com"
-            git add Formula/tp7.rb
+            git add -A
             git commit -m "chore: release tp7 v${VERSION}"
             git push origin HEAD:main
           else

@@ -82,9 +82,13 @@ cat > "${OUTPUT_FILE}" <<EOF
 
 \`\`\`sh
 brew tap totocaster/tap
-brew install totocaster/tap/tp7
+brew install --cask totocaster/tap/tp7
 tp7 --version
 \`\`\`
+
+The Homebrew cask installs macFUSE for Finder mounting. If macOS asks you to
+approve macFUSE in System Settings -> Privacy & Security, approve it and rerun
+\`tp7 doctor\`.
 
 ## Highlights
 

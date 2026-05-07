@@ -6,6 +6,7 @@ use crate::device::{Tp7Device, interface_summary};
 use crate::doctor::{DoctorReport, ProcessConflict};
 use crate::eject::EjectReport;
 use crate::ls::{LsEntry, LsReport};
+use crate::mount::{MountReport, UnmountReport};
 use crate::pull::{PullReport, PullStatus};
 use crate::push::{PushReport, PushStatus};
 use crate::remote::ObjectKind;
@@ -114,6 +115,12 @@ pub enum AppError {
     #[error("MTP device is busy or owned by another process: {message}")]
     MtpExclusiveAccess { message: String },
 
+    #[error("mount failed: {message}")]
+    Mount { message: String },
+
+    #[error("unmount failed: {message}")]
+    Unmount { message: String },
+
     #[error("MIDI operation failed: {message}")]
     Midi { message: String },
 
@@ -173,6 +180,8 @@ impl AppError {
             | AppError::TransferVerification { .. }
             | AppError::Mtp { .. }
             | AppError::MtpUnsupported { .. }
+            | AppError::Mount { .. }
+            | AppError::Unmount { .. }
             | AppError::Runtime { .. }
             | AppError::Json { .. } => 1,
         }
@@ -513,6 +522,32 @@ pub fn write_eject(report: &EjectReport, json: bool) -> Result<(), AppError> {
     );
     println!("  switched: {}", if report.switched { "yes" } else { "no" });
     println!("  closed: {}", if report.closed { "yes" } else { "no" });
+
+    Ok(())
+}
+
+pub fn write_mount(report: &MountReport, json: bool) -> Result<(), AppError> {
+    if json {
+        write_json(report)?;
+        return Ok(());
+    }
+
+    println!("unmounted {} ({})", report.mountpoint, report.message);
+
+    Ok(())
+}
+
+pub fn write_unmount(report: &UnmountReport, json: bool) -> Result<(), AppError> {
+    if json {
+        write_json(report)?;
+        return Ok(());
+    }
+
+    if report.unmounted {
+        println!("unmounted {}", report.mountpoint);
+    } else {
+        println!("not mounted {}", report.mountpoint);
+    }
 
     Ok(())
 }

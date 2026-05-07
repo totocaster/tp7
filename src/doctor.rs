@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::path::Path;
 use std::process::Command;
 
 use crate::device::{Tp7Device, UsbMode, filter_by_serial, list_tp7_devices};
@@ -131,6 +132,7 @@ pub fn run_doctor(serial: Option<&str>) -> Result<DoctorReport, AppError> {
         name: "implementation-dependency".to_string(),
         message: "This CLI uses direct USB enumeration; companion apps are not implementation dependencies.".to_string(),
     });
+    checks.push(finder_mount_runtime_check());
 
     Ok(DoctorReport {
         devices,
@@ -168,6 +170,31 @@ fn mode_check(device: &Tp7Device) -> DoctorCheck {
             message: "The TP-7 USB mode could not be inferred from visible interfaces.".to_string(),
         },
     }
+}
+
+fn finder_mount_runtime_check() -> DoctorCheck {
+    if fuse_runtime_installed() {
+        DoctorCheck {
+            status: CheckStatus::Ok,
+            name: "finder-mount-runtime".to_string(),
+            message: "A FUSE runtime appears installed for Finder mounting. If mounting is still blocked, approve macFUSE in System Settings -> Privacy & Security.".to_string(),
+        }
+    } else {
+        DoctorCheck {
+            status: CheckStatus::Warn,
+            name: "finder-mount-runtime".to_string(),
+            message: "Finder mounting requires macFUSE. Install with `brew install --cask macfuse`; if macOS prompts, approve it in System Settings -> Privacy & Security.".to_string(),
+        }
+    }
+}
+
+fn fuse_runtime_installed() -> bool {
+    [
+        "/Library/Filesystems/macfuse.fs",
+        "/Library/Filesystems/fuse-t.fs",
+    ]
+    .iter()
+    .any(|path| Path::new(path).exists())
 }
 
 fn find_process_conflicts() -> Result<Vec<ProcessConflict>, AppError> {

@@ -1,6 +1,6 @@
 # TP-7 CLI
 
-`tp7` is a macOS command-line tool for browsing and moving files on a Teenage Engineering TP-7 field recorder without relying on FieldKit, Android File Transfer, or Finder mounting.
+`tp7` is a macOS command-line tool for browsing and moving files on a Teenage Engineering TP-7 field recorder without relying on FieldKit or Android File Transfer. Direct file commands need no Finder mount; Finder mounting is available when macFUSE or Fuse-T is installed.
 
 The TP-7 normally appears as a USB audio/MIDI device. `tp7` can send the device-specific MIDI mode switch, wait for the recorder to re-enumerate as MTP, open a direct MTP session, perform the file operation, and close the session again.
 
@@ -21,11 +21,13 @@ tp7 -a pull /recordings ./recordings --recursive --skip-existing
 tp7 -a push ./clip.wav /memo/clip.wav --dry-run
 tp7 -a push ./clip.wav /memo/clip.wav --overwrite
 tp7 -a rm /memo/clip.wav --dry-run
+tp7 -a mount
+tp7 unmount
 ```
 
 For normal use, prefer `-a` / `--auto-connect`. Each command then handles the full TP-7 lifecycle: detect the recorder, switch to MTP if needed, open MTP, do the operation, and close cleanly.
 
-`tp7 connect` and `tp7 eject` are diagnostic/manual-control commands. They are useful for checking whether MTP can be opened and released, but they are not a "mount once, run many commands, eject later" workflow.
+`tp7 connect` and `tp7 eject` are diagnostic/manual-control commands. They are useful for checking whether MTP can be opened and released. For Finder access, use `tp7 mount`; it keeps the MTP session open until Finder, `diskutil`, `umount`, or `tp7 unmount` unmounts the volume.
 
 ## Command surface
 
@@ -42,6 +44,8 @@ push     Upload a file or directory to the TP-7
 mkdir    Create a remote folder
 rm       Delete a remote file or folder
 rename   Rename a remote object without moving it
+mount    Mount the TP-7 as a Finder filesystem
+unmount  Unmount a mounted TP-7 filesystem
 eject    Open and close an MTP session cleanly
 ```
 
@@ -91,15 +95,19 @@ The TP-7 firmware tested here (`1.1.9`) accepts file upload, rename, delete, and
 - `push --recursive` uploads into an existing remote folder tree only.
 - Missing remote folders are detected before any recursive upload starts.
 
-This is a direct MTP CLI, not a Finder mount. A future FUSE mount is documented as a separate research track in `docs/spec.md`.
+Finder mounting is read-write by default. By default `tp7 mount` uses `~/TP-7`, creating it when needed. If `~/TP-7` is already in use, it tries `~/TP-7-2`, `~/TP-7-3`, and so on. You can also pass your own empty directory or use `--read-only` for an inspection-only mount.
+
+Because TP-7 firmware `1.1.9` rejects MTP folder creation, creating folders from Finder may fail even though file copy, overwrite, rename, and delete use writable MTP operations.
 
 ## Local requirements
 
 - macOS
 - A Teenage Engineering TP-7 connected over USB
 - Rust 1.88 or newer for source builds and development
+- For Finder mounting: macFUSE at runtime; source builds also need FUSE
+  `pkg-config` metadata available at build time
 
-No Android File Transfer, FieldKit, libmtp, or kernel extension is required for the direct CLI workflow.
+No Android File Transfer, FieldKit, libmtp, or kernel extension is required for the direct CLI workflow. Finder mounting uses FUSE and is separate from the direct MTP commands.
 
 ## Install
 
@@ -107,9 +115,13 @@ With Homebrew:
 
 ```sh
 brew tap totocaster/tap
-brew install totocaster/tap/tp7
+brew install --cask totocaster/tap/tp7
 tp7 --version
 ```
+
+The Homebrew cask installs macFUSE as a dependency for Finder mounting. If
+macOS asks you to approve macFUSE in System Settings -> Privacy & Security,
+approve it and rerun `tp7 doctor` or `tp7 -a mount`.
 
 From this repository:
 
@@ -121,6 +133,7 @@ Or during development:
 
 ```sh
 cargo run -- -a ls -lah /
+cargo run -- -a mount
 ```
 
 ## Development
@@ -134,6 +147,10 @@ cargo clippy -- -D warnings
 cargo test
 cargo run -- --help
 ```
+
+On macOS machines without FUSE development metadata, Rust builds that compile
+the mount code will fail until macFUSE or Fuse-T exposes `fuse.pc` to
+`pkg-config`.
 
 When the TP-7 is connected and write behavior changes, run the hardware smoke script. It creates only tiny temporary text files under `/memo` by default:
 
@@ -157,7 +174,7 @@ Releases are tag-driven and update the Homebrew tap automatically:
 3. Tag the commit as `vX.Y.Z`.
 4. Push the tag.
 
-The GitHub `Release` workflow verifies formatting, check, clippy, tests, and a CLI smoke test, then builds `aarch64-apple-darwin` and `x86_64-apple-darwin` release archives. It publishes the GitHub release with install instructions, artifact checksums, and conventional-commit changelog notes, then rewrites `Formula/tp7.rb` in `totocaster/homebrew-tap` with the new artifact URLs and SHA256 sums. The `HOMEBREW_TAP_TOKEN` repository secret must be configured for the tap push.
+The GitHub `Release` workflow verifies formatting, check, clippy, tests, and a CLI smoke test, then builds `aarch64-apple-darwin` and `x86_64-apple-darwin` release archives. It publishes the GitHub release with install instructions, artifact checksums, and conventional-commit changelog notes, then rewrites `Casks/tp7.rb` in `totocaster/homebrew-tap` with the new artifact URLs and SHA256 sums. The `HOMEBREW_TAP_TOKEN` repository secret must be configured for the tap push.
 
 ## License
 
