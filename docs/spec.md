@@ -4,7 +4,7 @@
 
 Build a macOS CLI for Teenage Engineering TP-7 file access.
 
-The first implementation target is a robust Rust-based MTP file manager that can detect the TP-7, switch or validate MTP mode, list files, and transfer recordings. Finder-style mounting is valuable, but should be treated as a later layer because MTP is object-based and macOS mounting requires FUSE infrastructure.
+The first implementation target is a robust Rust-based MTP file manager that can detect the TP-7, switch or validate MTP mode, list files, transfer recordings, and expose a read-only Finder volume without third-party filesystem extensions.
 
 ## Current Decision
 
@@ -16,7 +16,8 @@ Recommended initial stack:
 - `nusb` indirectly through `mtp-rs` for USB access.
 - `clap` for CLI parsing.
 - `tracing` or `log` for diagnostics.
-- Later: `fuser` plus macFUSE or Fuse-T for filesystem mounting.
+- macOS' built-in WebDAV filesystem client for read-only Finder mounting.
+- Later, only if needed: File Provider, FSKit, or FUSE-style mounting for deeper Finder integration.
 
 Avoid `libmtp` in the first prototype unless `mtp-rs` cannot handle the TP-7 reliably. FieldKit uses `libmtp`, so it remains a proven fallback.
 
@@ -72,6 +73,8 @@ Observed from local binary metadata:
 - It links against bundled `libusb.dylib`.
 - It has the `com.apple.security.device.usb` entitlement.
 - It does not appear to bundle macFUSE/Fuse-T components.
+- User-observed behavior confirms FieldKit can present a Finder-visible drive
+  after activation inside the app.
 
 Observed strings and logs indicate:
 
@@ -82,10 +85,12 @@ Observed strings and logs indicate:
 - FieldKit can re-enumerate the device.
 - FieldKit sends MIDI `greet` and `mode` requests.
 - FieldKit then opens the MTP device with libmtp.
+- FieldKit has strings such as `mountQueue`, `volumeIcon`, `NSFilePromiseProvider`,
+  download, upload, and internal copy.
 
 Practical inference:
 
-FieldKit sends a Teenage Engineering-specific MIDI request to switch the TP-7 from audio/MIDI mode into MTP mode, waits for USB re-enumeration, and then opens the re-enumerated MTP device through libmtp/libusb.
+FieldKit sends a Teenage Engineering-specific MIDI request to switch the TP-7 from audio/MIDI mode into MTP mode, waits for USB re-enumeration, and then opens the re-enumerated MTP device through libmtp/libusb. Its Finder-visible drive does not appear to come from bundled FUSE components or an embedded File Provider extension, so it is likely built on macOS facilities such as a local network filesystem mount or app-coordinated file presentation.
 
 The exact mode-switch payload has been validated independently through CoreMIDI and implemented directly in Rust. FieldKit remains a research reference only, not a runtime dependency.
 
@@ -187,19 +192,23 @@ Potential process conflicts:
 
 The CLI should detect and report likely conflicts rather than failing with a generic USB error.
 
-For mounting, macOS requires a FUSE-compatible runtime:
+For true arbitrary POSIX filesystem mounting, macOS requires a filesystem runtime:
 
 - macFUSE: mature, but requires kernel extension approval or newer FSKit paths depending on version/macOS.
 - Fuse-T: kext-less, attractive for distribution, but needs validation with Rust FUSE tooling.
+- FSKit: native user-space filesystem modules on newer macOS, but delivered as an app extension rather than a standalone Rust CLI.
+- File Provider: native Finder integration for replicated/cloud-style domains, but also requires an app extension and domain registration.
+- WebDAV: built into macOS and mountable from a CLI through `mount_webdav`; suitable for a read-only TP-7 bridge without extensions.
 
-V1 should not require FUSE.
+V1 mounting should not require FUSE or app extensions.
 
 ## Rust Tooling
 
 Preferred:
 
 - `mtp-rs`: pure Rust MTP implementation, built on `nusb`. This avoids C dependencies and should be the first prototype path.
-- `fuser`: Rust FUSE library for a future mount layer.
+- A small loopback WebDAV server for the first read-only Finder mount layer.
+- `fuser`, FSKit, or File Provider only if WebDAV proves insufficient.
 
 Fallback:
 
@@ -358,13 +367,21 @@ reverse mode-switch command is discovered later, this can optionally use it.
 
 ### Future Commands
 
-`tp7 mount <mountpoint>`
+`tp7 mount [mountpoint]`
 
-Mount the TP-7 as a read-only filesystem. Requires macFUSE or Fuse-T.
+Implemented as a read-only Finder volume through a loopback WebDAV server and
+macOS `mount_webdav`. With no mount point, it chooses `/Volumes/TP-7`, then
+`/Volumes/TP-7 2`, etc. The command keeps running while the mount is active.
 
-`tp7 mount <mountpoint> --read-write`
+`tp7 unmount [mountpoint]`
 
-Read-write mount with local write staging and upload-on-close semantics.
+Unmount one TP-7 WebDAV mount, or all recorded TP-7 mounts when no mount point
+is passed.
+
+`tp7 mount [mountpoint] --read-write`
+
+Not implemented. Read-write mounting needs local write staging and
+upload-on-close semantics.
 
 `tp7 sync <remote-path> <local-path>`
 
@@ -400,11 +417,14 @@ Current choices:
 - Retry transient CoreMIDI endpoint discovery during `--auto-connect` for the
   same 12-second window used for MTP visibility because the USB device can
   reappear before its MIDI endpoints are ready.
-- Keep v1 mount-free.
+- `tp7 mount` uses an explicit long-lived MTP session and exposes it via a
+  local read-only WebDAV bridge.
+- `tp7 unmount` without a mount point unmounts all TP-7 mounts recorded by the
+  CLI.
 
 ## Implementation Plan
 
-Phases 0 through 4 now have working prototype coverage: CLI scaffolding, USB detection, diagnostics, CoreMIDI mode switching, MTP status validation, shared session handling, and read-only file exploration. Phase 5 has started with direct `tp7 pull` downloads.
+Phases 0 through 7 now have working prototype coverage: CLI scaffolding, USB detection, diagnostics, CoreMIDI mode switching, MTP status validation, shared session handling, read-only file exploration, transfers, mutations, and a read-only WebDAV-backed Finder mount.
 
 ### Phase 0: Baseline Project
 
@@ -483,14 +503,19 @@ Deliverable:
 - `tp7 eject` (implemented as MTP open/close validation)
 - dry-run behavior
 
-### Phase 7: Mount Research
+### Phase 7: Read-Only Finder Mount
 
-Prototype a read-only FUSE mount after the direct MTP CLI is stable.
+Expose the TP-7 through Finder without macFUSE, Fuse-T, kernel extensions, or
+app extensions.
 
 Deliverable:
 
-- decision between macFUSE and Fuse-T
-- read-only `tp7 mount <mountpoint>` prototype
+- `tp7 mount [mountpoint]` (implemented through a local WebDAV server and
+  `mount_webdav`)
+- default `/Volumes/TP-7` mountpoint selection
+- `tp7 unmount [mountpoint]`, where no mountpoint unmounts all recorded TP-7
+  mounts
+- byte-range `GET` handling backed by MTP partial reads when available
 
 ## Risks
 
@@ -516,7 +541,13 @@ Library risk:
 
 Mount risk:
 
-- Finder-style mounting is a separate product surface with caching, partial writes, metadata, and macOS FUSE distribution concerns.
+- Finder-style mounting is a separate product surface with caching, byte ranges,
+  metadata, and many macOS filesystem client behaviors.
+- WebDAV keeps distribution simple but must be validated against Finder, Quick
+  Look, Spotlight, and large TP-7 recordings on hardware.
+- Read-write mounting is higher risk because MTP writes are whole-object uploads
+  while Finder and POSIX clients expect partial writes, safe-save, rename,
+  metadata, and delete semantics.
 
 ## References
 

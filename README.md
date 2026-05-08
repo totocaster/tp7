@@ -1,6 +1,6 @@
 # TP-7 CLI
 
-`tp7` is a macOS command-line tool for browsing and moving files on a Teenage Engineering TP-7 field recorder without relying on FieldKit, Android File Transfer, or Finder mounting.
+`tp7` is a macOS command-line tool for browsing, moving, and mounting files on a Teenage Engineering TP-7 field recorder without relying on FieldKit or Android File Transfer.
 
 The TP-7 normally appears as a USB audio/MIDI device. `tp7` can send the device-specific MIDI mode switch, wait for the recorder to re-enumerate as MTP, open a direct MTP session, perform the file operation, and close the session again.
 
@@ -21,11 +21,15 @@ tp7 -a pull /recordings ./recordings --recursive --skip-existing
 tp7 -a push ./clip.wav /memo/clip.wav --dry-run
 tp7 -a push ./clip.wav /memo/clip.wav --overwrite
 tp7 -a rm /memo/clip.wav --dry-run
+tp7 mount
+tp7 unmount
 ```
 
 For normal use, prefer `-a` / `--auto-connect`. Each command then handles the full TP-7 lifecycle: detect the recorder, switch to MTP if needed, open MTP, do the operation, and close cleanly.
 
 `tp7 connect` and `tp7 eject` are diagnostic/manual-control commands. They are useful for checking whether MTP can be opened and released, but they are not a "mount once, run many commands, eject later" workflow.
+
+`tp7 mount` exposes the TP-7 as a read-only Finder volume through a local WebDAV bridge backed by the same MTP session layer. With no mount point argument it chooses `/Volumes/TP-7`, or `/Volumes/TP-7 2` and so on when needed. The command stays running while the mount is active; use `tp7 unmount <mountpoint>` from another shell, or `tp7 unmount` to unmount all TP-7 mounts recorded by the CLI.
 
 ## Command surface
 
@@ -42,6 +46,8 @@ push     Upload a file or directory to the TP-7
 mkdir    Create a remote folder
 rm       Delete a remote file or folder
 rename   Rename a remote object without moving it
+mount    Mount the TP-7 in Finder through a local WebDAV bridge
+unmount  Unmount TP-7 WebDAV mount(s)
 eject    Open and close an MTP session cleanly
 ```
 
@@ -91,7 +97,7 @@ The TP-7 firmware tested here (`1.1.9`) accepts file upload, rename, delete, and
 - `push --recursive` uploads into an existing remote folder tree only.
 - Missing remote folders are detected before any recursive upload starts.
 
-This is a direct MTP CLI, not a Finder mount. A future FUSE mount is documented as a separate research track in `docs/spec.md`.
+Finder mounting is currently read-only. It uses macOS' built-in WebDAV filesystem support and does not require macFUSE, Fuse-T, a kernel extension, or a system extension. Read-write mounting is intentionally not enabled yet because Finder-style writes need staged whole-file uploads and careful handling for safe-save, rename, delete, `.DS_Store`, and unsupported TP-7 folder creation behavior.
 
 ## Local requirements
 
@@ -99,7 +105,7 @@ This is a direct MTP CLI, not a Finder mount. A future FUSE mount is documented 
 - A Teenage Engineering TP-7 connected over USB
 - Rust 1.88 or newer for source builds and development
 
-No Android File Transfer, FieldKit, libmtp, or kernel extension is required for the direct CLI workflow.
+No Android File Transfer, FieldKit, libmtp, macFUSE, or kernel extension is required for the direct CLI or read-only Finder mount workflow.
 
 ## Install
 

@@ -146,6 +146,9 @@ What each step taught us:
 - MTP support lives behind our own session layer. `ls`, `tree`, `stat`, and
   `pull`, `push`, `rename`, and `rm` now use that same switch/open/work/close
   flow.
+- `mount` keeps a long-lived MTP session open and exposes it to Finder through a
+  local read-only WebDAV server plus macOS `mount_webdav`; `unmount` tears down
+  one recorded mount or all recorded TP-7 mounts.
 - TP-7 firmware `1.1.9` accepted file upload, rename, and delete in smoke tests,
   but rejected folder creation with MTP `GeneralError`.
 - `push --overwrite` stages a replacement under a temporary remote name before

@@ -6,6 +6,7 @@ use crate::device::{Tp7Device, interface_summary};
 use crate::doctor::{DoctorReport, ProcessConflict};
 use crate::eject::EjectReport;
 use crate::ls::{LsEntry, LsReport};
+use crate::mount::{MountReport, UnmountReport};
 use crate::pull::{PullReport, PullStatus};
 use crate::push::{PushReport, PushStatus};
 use crate::remote::ObjectKind;
@@ -114,6 +115,12 @@ pub enum AppError {
     #[error("MTP device is busy or owned by another process: {message}")]
     MtpExclusiveAccess { message: String },
 
+    #[error("mount failed: {message}")]
+    Mount { message: String },
+
+    #[error("unmount failed: {message}")]
+    Unmount { message: String },
+
     #[error("MIDI operation failed: {message}")]
     Midi { message: String },
 
@@ -173,6 +180,8 @@ impl AppError {
             | AppError::TransferVerification { .. }
             | AppError::Mtp { .. }
             | AppError::MtpUnsupported { .. }
+            | AppError::Mount { .. }
+            | AppError::Unmount { .. }
             | AppError::Runtime { .. }
             | AppError::Json { .. } => 1,
         }
@@ -493,6 +502,54 @@ pub fn write_rm(report: &RmReport, json: bool) -> Result<(), AppError> {
             "removed"
         };
         println!("{status} {} ({})", report.path, ls_kind_label(&object.kind));
+    }
+
+    Ok(())
+}
+
+pub fn write_mount(report: &MountReport, json: bool) -> Result<(), AppError> {
+    if json {
+        write_json(report)?;
+        return Ok(());
+    }
+
+    println!(
+        "mounted {} at {}",
+        report.serial_number.as_deref().unwrap_or("<no-serial>"),
+        report.mountpoint
+    );
+    println!("  url: {}", report.url);
+    println!(
+        "  mode: {}",
+        if report.read_write {
+            "read-write"
+        } else {
+            "read-only"
+        }
+    );
+    println!("  pid: {}", report.pid);
+    println!("  stop: tp7 unmount {}", report.mountpoint);
+
+    Ok(())
+}
+
+pub fn write_unmount(report: &UnmountReport, json: bool) -> Result<(), AppError> {
+    if json {
+        write_json(report)?;
+        return Ok(());
+    }
+
+    if report.unmounted.is_empty() && report.failed.is_empty() {
+        println!("no TP-7 mounts found");
+        return Ok(());
+    }
+
+    for mount in &report.unmounted {
+        println!("unmounted {}", mount.mountpoint);
+    }
+
+    for failure in &report.failed {
+        println!("failed {}: {}", failure.mountpoint, failure.message);
     }
 
     Ok(())

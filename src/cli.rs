@@ -87,6 +87,12 @@ pub enum Command {
     #[command(about = "Rename a remote object without moving it")]
     Rename(RenameArgs),
 
+    #[command(about = "Mount the TP-7 in Finder through a local WebDAV bridge")]
+    Mount(MountArgs),
+
+    #[command(about = "Unmount TP-7 WebDAV mount(s)")]
+    Unmount(UnmountArgs),
+
     #[command(about = "Open and close an MTP session cleanly")]
     Eject,
 }
@@ -220,4 +226,22 @@ pub struct RenameArgs {
 
     #[arg(help = "New name in the same remote folder")]
     pub new_name: String,
+}
+
+#[derive(Debug, Args)]
+pub struct MountArgs {
+    #[arg(help = "Local mount point; defaults to /Volumes/TP-7")]
+    pub mountpoint: Option<String>,
+
+    #[arg(
+        long = "read-write",
+        help = "Allow write operations through the mount; not available yet"
+    )]
+    pub read_write: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct UnmountArgs {
+    #[arg(help = "Mount point to unmount; omit to unmount all TP-7 mounts")]
+    pub mountpoint: Option<String>,
 }
