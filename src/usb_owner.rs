@@ -267,7 +267,9 @@ fn owner_belongs_to_tp7_device(entries: &[IoregEntry], index: usize) -> bool {
 fn is_tp7_device_entry(entry: &IoregEntry) -> bool {
     entry.node_class == "IOUSBHostDevice"
         && entry.id_vendor == Some(crate::device::TP7_VENDOR_ID)
-        && entry.id_product == Some(crate::device::TP7_PRODUCT_ID)
+        && entry
+            .id_product
+            .is_some_and(crate::device::is_tp7_product_id)
 }
 
 fn nearest_scope_entry(entries: &[IoregEntry], index: usize) -> usize {

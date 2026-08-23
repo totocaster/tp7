@@ -5,6 +5,11 @@ use crate::output::AppError;
 
 pub const TP7_VENDOR_ID: u16 = 0x2367;
 pub const TP7_PRODUCT_ID: u16 = 0x0019;
+pub const TP7_AUDIO_MIDI_PRODUCT_ID: u16 = 0x8019;
+
+pub fn is_tp7_product_id(product_id: u16) -> bool {
+    matches!(product_id, TP7_PRODUCT_ID | TP7_AUDIO_MIDI_PRODUCT_ID)
+}
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -72,7 +77,7 @@ pub fn list_tp7_devices() -> Result<Vec<Tp7Device>, AppError> {
 
     Ok(devices
         .filter(|device| {
-            device.vendor_id() == TP7_VENDOR_ID && device.product_id() == TP7_PRODUCT_ID
+            device.vendor_id() == TP7_VENDOR_ID && is_tp7_product_id(device.product_id())
         })
         .map(Tp7Device::from)
         .collect())
@@ -350,6 +355,13 @@ mod tests {
             registry_entry_id: Some("0x00000001000b6528".to_string()),
             interfaces: vec![],
         }
+    }
+
+    #[test]
+    fn recognizes_known_product_ids() {
+        assert!(is_tp7_product_id(TP7_PRODUCT_ID));
+        assert!(is_tp7_product_id(TP7_AUDIO_MIDI_PRODUCT_ID));
+        assert!(!is_tp7_product_id(0x1234));
     }
 
     #[test]
