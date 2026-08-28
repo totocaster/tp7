@@ -8,8 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
 use futures::Stream;
-use mtp_rs::ptp::{ObjectHandle, ObjectInfo};
-use mtp_rs::{NewObjectInfo, Storage};
+use mtp_rs::{NewObjectInfo, ObjectHandle, ObjectInfo, Storage};
 use serde::{Deserialize, Serialize};
 
 use crate::mtp_session::{MtpOpenPolicy, block_on, map_mtp_error, open_mtp_session};
@@ -84,9 +83,9 @@ pub fn run_push(
     block_on(async {
         let session = open_mtp_session(serial, policy).await?;
         let result = write_push(&session.device, &local_path, remote_path, options).await;
-        let close_result = session.close().await;
+        let release_result = session.release().await;
 
-        match (result, close_result) {
+        match (result, release_result) {
             (Ok(report), Ok(())) => Ok(report),
             (Err(error), _) => Err(error),
             (Ok(_), Err(error)) => Err(error),
@@ -346,7 +345,7 @@ async fn upload_file(
             ControlFlow::Continue(())
         })
         .await
-        .map_err(map_mtp_error);
+        .map_err(|error| map_mtp_error(error.into()));
 
     finish_progress(options.progress);
     result
@@ -689,7 +688,7 @@ impl Stream for FileChunkStream {
 
 #[cfg(test)]
 mod tests {
-    use mtp_rs::ptp::ObjectHandle;
+    use mtp_rs::ObjectHandle;
 
     use super::*;
 

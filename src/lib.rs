@@ -55,6 +55,7 @@ pub fn run() -> Result<(), AppError> {
                 cli.device.as_deref(),
                 cli.auto_connect,
                 args.remote_path.as_str(),
+                args.take_over,
             )?;
             let sort = if args.sort_size {
                 output::LsSort::Size

@@ -119,6 +119,12 @@ pub struct LsArgs {
     pub reverse: bool,
 
     #[arg(
+        long,
+        help = "Terminate ptpcamerad only when it owns the MTP interface, then retry (macOS)"
+    )]
+    pub take_over: bool,
+
+    #[arg(
         short = 'h',
         long,
         help = "Format displayed sizes in human-readable units"
@@ -127,6 +133,22 @@ pub struct LsArgs {
 
     #[arg(long = "help", action = clap::ArgAction::HelpLong, help = "Print help")]
     pub help: Option<bool>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_ls_take_over() {
+        let cli = Cli::try_parse_from(["tp7", "ls", "--take-over", "/"]).unwrap();
+
+        let Command::Ls(args) = cli.command else {
+            panic!("expected ls command");
+        };
+        assert!(args.take_over);
+        assert_eq!(args.remote_path, "/");
+    }
 }
 
 #[derive(Debug, Args)]

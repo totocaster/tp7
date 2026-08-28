@@ -4,6 +4,7 @@ use crate::device::{Tp7Device, UsbMode};
 use crate::midi::MidiSwitchReport;
 use crate::mtp_session::{
     MtpOpenPolicy, PreparedMtpDevice, block_on, open_mtp_device, prepare_mtp_device,
+    release_mtp_device,
 };
 use crate::output::AppError;
 
@@ -83,10 +84,7 @@ fn validate_mtp_session(serial: Option<&str>) -> MtpSessionCheck {
             .await
             .map_err(crate::mtp_session::map_mtp_error)?;
         let storage_count = storages.len();
-        device
-            .close()
-            .await
-            .map_err(crate::mtp_session::map_mtp_error)?;
+        release_mtp_device(device);
         Ok(storage_count)
     }) {
         Ok(storage_count) => MtpSessionCheck {

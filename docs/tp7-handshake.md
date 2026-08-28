@@ -8,7 +8,8 @@ mode into MTP mode, and how we reverse-engineered the sequence.
 The TP-7 does not expose MTP as a normal macOS mountable device when first
 plugged in. It starts as a USB audio/MIDI device. To access files, the CLI must:
 
-1. Find the TP-7 over USB and CoreMIDI.
+1. Find the TP-7 over USB and CoreMIDI. The observed audio/MIDI personality
+   uses product ID `0x8019`; MTP uses `0x0019`.
 2. Send a Teenage Engineering SysEx `greet` command over MIDI.
 3. Send a Teenage Engineering SysEx `mode` command over MIDI.
 4. Wait for the TP-7 to re-enumerate as `TP-7 MTP Device`.
@@ -28,7 +29,7 @@ sequenceDiagram
     participant TP7 as TP-7
     participant MTP as MTP session
 
-    CLI->>USB: Detect vendor 0x2367, product 0x0019
+    CLI->>USB: Detect vendor 0x2367, product 0x8019 or 0x0019
     USB-->>CLI: TP-7 in audio/MIDI mode
     CLI->>MIDI: Find TP-7 MIDI source and destination
     CLI->>TP7: Universal MIDI identity request
@@ -136,16 +137,36 @@ What each step taught us:
 
 ## CLI Implications
 
-- File commands switch to MTP when `--auto-connect` is set, open a session,
-  perform the operation, and close cleanly in one flow.
+- File commands switch to MTP when `--auto-connect` is set, open or reuse the
+  durable device-side session, perform the operation, and release host ownership
+  without sending the TP-7 back to audio/MIDI mode.
+- A TP-7 observed in August 2026 acknowledged MTP `CloseSession` and then left
+  USB enumeration. Omitting `CloseSession` allowed an immediate second process
+  to win a short race, but a timestamped trace showed the device still returned
+  to its `0x8019` audio/MIDI personality within two seconds of the host releasing
+  the USB interface. A traced FieldKit 2.0.1 session sent no periodic MTP
+  traffic while idle. Its stable pre-list initialization reads the battery
+  descriptor, refreshes storage metadata twice, reads battery level twice and
+  device time once, then refreshes storage metadata before listing objects.
+  A smaller prefix remained stable only until object listing began. The CLI
+  uses FieldKit's stable session ID through `mtp-rs` 0.32.0, reuses
+  `SessionAlreadyOpen` without sending `CloseSession`, primes storage metadata,
+  and leaves USB cleanup to process exit. Ordinary commands therefore leave
+  the TP-7 in MTP without polling or a resident process; `tp7 eject` remains
+  the explicit protocol-level close. The FieldKit property reads remain useful
+  reverse-engineering evidence, but are not exposed by the backend-neutral
+  high-level API in `mtp-rs` 0.32.0.
+- `ls --take-over` automates that recovery narrowly: it acts only after an
+  exclusive-access failure and only when IORegistry identifies `ptpcamerad` as
+  the exclusive TP-7 MTP interface owner. It leaves every other owner alone.
 - `tp7 status` cannot assume a previous `tp7 connect` left the TP-7 in MTP mode.
 - The CLI should warn when FieldKit or other processes own TP-7 interfaces,
   but it should not require those apps.
 - Newer firmware accepts mode payload `[0x01, 0x03]`. FieldKit suggests
   `[0x01, 0x02]` may be a fallback for older firmware.
 - MTP support lives behind our own session layer. `ls`, `tree`, `stat`, and
-  `pull`, `push`, `rename`, and `rm` now use that same switch/open/work/close
-  flow.
+  `pull`, `push`, `rename`, and `rm` now use the same switch/open/work/release
+  flow, backed by the upstream `mtp-rs` 0.32.0 session-reuse API.
 - TP-7 firmware `1.1.9` accepted file upload, rename, and delete in smoke tests,
   but rejected folder creation with MTP `GeneralError`.
 - `push --overwrite` stages a replacement under a temporary remote name before

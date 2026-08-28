@@ -2,9 +2,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use mtp_rs::Storage;
-use mtp_rs::ptp::ObjectInfo;
-use mtp_rs::{DEFAULT_CANCEL_TIMEOUT, ObjectHandle};
+use mtp_rs::{ByteRange, DEFAULT_CANCEL_TIMEOUT, ObjectHandle, ObjectInfo, Storage};
 use serde::{Deserialize, Serialize};
 
 use crate::mtp_session::{MtpOpenPolicy, block_on, map_mtp_error, open_mtp_session};
@@ -66,9 +64,9 @@ pub fn run_pull(
     block_on(async {
         let session = open_mtp_session(serial, policy).await?;
         let result = read_pull(&session.device, remote_path, local_path, options).await;
-        let close_result = session.close().await;
+        let release_result = session.release().await;
 
-        match (result, close_result) {
+        match (result, release_result) {
             (Ok(report), Ok(())) => Ok(report),
             (Err(error), _) => Err(error),
             (Ok(_), Err(error)) => Err(error),
@@ -249,7 +247,7 @@ async fn download_to_path(
     options: PullOptions,
 ) -> Result<(), AppError> {
     let mut download = storage
-        .download_stream(handle)
+        .download(handle, ByteRange::Full)
         .await
         .map_err(map_mtp_error)?;
     let mut file = create_file(local_path)?;

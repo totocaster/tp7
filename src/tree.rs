@@ -1,5 +1,4 @@
-use mtp_rs::Storage;
-use mtp_rs::ptp::{ObjectHandle, ObjectInfo};
+use mtp_rs::{ObjectHandle, ObjectInfo, Storage};
 use serde::{Deserialize, Serialize};
 
 use crate::mtp_session::{MtpOpenPolicy, block_on, open_mtp_session};
@@ -10,7 +9,7 @@ use crate::remote::{RemoteObject, RemoteTarget, first_storage, list_object_infos
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TreeReport {
     pub path: String,
-    pub storage_id: u32,
+    pub storage_id: u64,
     pub entries: Vec<TreeEntry>,
 }
 
@@ -36,9 +35,9 @@ pub fn run_tree(
     block_on(async {
         let session = open_mtp_session(serial, policy).await?;
         let result = read_tree(&session.device, remote_path, depth).await;
-        let close_result = session.close().await;
+        let release_result = session.release().await;
 
-        match (result, close_result) {
+        match (result, release_result) {
             (Ok(report), Ok(())) => Ok(report),
             (Err(error), _) => Err(error),
             (Ok(_), Err(error)) => Err(error),
@@ -135,7 +134,7 @@ impl TreeEntry {
 
 #[cfg(test)]
 mod tests {
-    use mtp_rs::ptp::{ObjectFormatCode, ObjectHandle, ObjectInfo};
+    use mtp_rs::{ObjectFormat, ObjectHandle, ObjectInfo};
 
     use crate::remote::ObjectKind;
 
@@ -143,13 +142,11 @@ mod tests {
 
     #[test]
     fn builds_tree_entry_from_object() {
-        let object = ObjectInfo {
-            handle: ObjectHandle(16),
-            format: ObjectFormatCode::Wav,
-            filename: "take.wav".to_string(),
-            size: 1024,
-            ..Default::default()
-        };
+        let mut object = ObjectInfo::default();
+        object.handle = ObjectHandle(16);
+        object.format = ObjectFormat(0x3008);
+        object.filename = "take.wav".to_string();
+        object.size = 1024;
 
         let entry = TreeEntry::from_object("/recordings/take.wav".to_string(), 1, object);
 

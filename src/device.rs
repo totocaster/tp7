@@ -4,7 +4,12 @@ use serde::Serialize;
 use crate::output::AppError;
 
 pub const TP7_VENDOR_ID: u16 = 0x2367;
-pub const TP7_PRODUCT_ID: u16 = 0x0019;
+pub const TP7_MTP_PRODUCT_ID: u16 = 0x0019;
+pub const TP7_AUDIO_MIDI_PRODUCT_ID: u16 = 0x8019;
+
+pub fn is_tp7_product_id(product_id: u16) -> bool {
+    matches!(product_id, TP7_MTP_PRODUCT_ID | TP7_AUDIO_MIDI_PRODUCT_ID)
+}
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -72,7 +77,7 @@ pub fn list_tp7_devices() -> Result<Vec<Tp7Device>, AppError> {
 
     Ok(devices
         .filter(|device| {
-            device.vendor_id() == TP7_VENDOR_ID && device.product_id() == TP7_PRODUCT_ID
+            device.vendor_id() == TP7_VENDOR_ID && is_tp7_product_id(device.product_id())
         })
         .map(Tp7Device::from)
         .collect())
@@ -330,9 +335,9 @@ mod tests {
     fn tp7_device(serial_number: Option<&str>) -> Tp7Device {
         Tp7Device {
             vendor_id: TP7_VENDOR_ID,
-            product_id: TP7_PRODUCT_ID,
+            product_id: TP7_AUDIO_MIDI_PRODUCT_ID,
             vendor_id_hex: "0x2367".to_string(),
-            product_id_hex: "0x0019".to_string(),
+            product_id_hex: "0x8019".to_string(),
             manufacturer: Some("teenage engineering".to_string()),
             product: Some("TP-7".to_string()),
             serial_number: serial_number.map(str::to_string),
@@ -357,6 +362,13 @@ mod tests {
         let interfaces = vec![interface(0x01, 0x01, 0), interface(0x01, 0x03, 0)];
 
         assert_eq!(infer_usb_mode(&interfaces), UsbMode::AudioMidi);
+    }
+
+    #[test]
+    fn recognizes_audio_midi_and_mtp_product_ids() {
+        assert!(is_tp7_product_id(TP7_AUDIO_MIDI_PRODUCT_ID));
+        assert!(is_tp7_product_id(TP7_MTP_PRODUCT_ID));
+        assert!(!is_tp7_product_id(0x1234));
     }
 
     #[test]

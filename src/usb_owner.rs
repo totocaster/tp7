@@ -89,6 +89,22 @@ pub fn is_conflicting_owner(owner: &UsbOwner) -> bool {
         || process.contains("ptpcamerad")
 }
 
+pub fn ptpcamerad_exclusive_owner_pids(owners: &[UsbOwner]) -> Vec<u32> {
+    let mut pids = owners
+        .iter()
+        .filter(|owner| {
+            owner.kind == UsbOwnerKind::ExclusiveOwner
+                && owner.scope == UsbOwnerScope::Interface
+                && owner.process.eq_ignore_ascii_case("ptpcamerad")
+        })
+        .filter_map(|owner| owner.pid)
+        .collect::<Vec<_>>();
+
+    pids.sort_unstable();
+    pids.dedup();
+    pids
+}
+
 fn parse_ioreg_usb_owners(output: &str) -> Vec<UsbOwner> {
     let entries = parse_ioreg_entries(output);
     let mut owners = Vec::new();
@@ -267,7 +283,9 @@ fn owner_belongs_to_tp7_device(entries: &[IoregEntry], index: usize) -> bool {
 fn is_tp7_device_entry(entry: &IoregEntry) -> bool {
     entry.node_class == "IOUSBHostDevice"
         && entry.id_vendor == Some(crate::device::TP7_VENDOR_ID)
-        && entry.id_product == Some(crate::device::TP7_PRODUCT_ID)
+        && entry
+            .id_product
+            .is_some_and(crate::device::is_tp7_product_id)
 }
 
 fn nearest_scope_entry(entries: &[IoregEntry], index: usize) -> usize {
@@ -431,5 +449,40 @@ mod tests {
         assert_eq!(owners[0].process, "other process");
         assert_eq!(owners[0].raw, "pid 92001, other process");
         assert_eq!(owners[0].owner_node_name, "other process");
+    }
+
+    #[test]
+    fn selects_only_exclusive_ptpcamerad_interface_owners() {
+        let output = r#"
++-o TP-7 MTP Device@01100000  <class IOUSBHostDevice, id 0x1000b6528, registered>
+  | {
+  |   "idVendor" = 9063
+  |   "idProduct" = 25
+  | }
+  |
+  +-o MTP Data Intf@0  <class IOUSBHostInterface, id 0x1000b6530, registered>
+  | | {
+  | |   "bInterfaceProtocol" = 1
+  | |   "bInterfaceClass" = 6
+  | |   "bInterfaceSubClass" = 1
+  | |   "UsbExclusiveOwner" = "pid 28379, ptpcamerad"
+  | |   "kUSBString" = "MTP Data Intf"
+  | |   "bInterfaceNumber" = 0
+  | | }
+  | |
+  | +-o ptpcamerad  <class AppleUSBHostInterfaceUserClient, id 0x1000b6545>
+  |     {
+  |       "IOUserClientCreator" = "pid 28379, ptpcamerad"
+  |     }
+  |
+  +-o field kit  <class AppleUSBHostDeviceUserClient, id 0x1000b6537>
+      {
+        "IOUserClientCreator" = "pid 19731, field kit"
+      }
+"#;
+
+        let owners = parse_ioreg_usb_owners(output);
+
+        assert_eq!(ptpcamerad_exclusive_owner_pids(&owners), vec![28379]);
     }
 }

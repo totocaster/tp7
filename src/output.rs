@@ -108,6 +108,9 @@ pub enum AppError {
     #[error("MTP operation failed: {message}")]
     Mtp { message: String },
 
+    #[error("could not take over the TP-7 MTP interface: {message}")]
+    MtpTakeover { message: String },
+
     #[error("MTP operation is not supported: {message}")]
     MtpUnsupported { message: String },
 
@@ -157,7 +160,7 @@ impl AppError {
             | AppError::RemotePathExists { .. }
             | AppError::InvalidArguments { .. } => 2,
             AppError::MtpNotVisible { .. } | AppError::AutoConnectRequired { .. } => 3,
-            AppError::MtpExclusiveAccess { .. } => 4,
+            AppError::MtpExclusiveAccess { .. } | AppError::MtpTakeover { .. } => 4,
             AppError::Midi { .. }
             | AppError::MidiTimeout { .. }
             | AppError::MidiCommandRejected { .. } => 5,

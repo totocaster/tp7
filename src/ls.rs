@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-use crate::mtp_session::{MtpOpenPolicy, block_on, open_mtp_session};
+use crate::mtp_session::{MtpOpenPolicy, block_on, open_mtp_session_with_takeover};
 use crate::output::AppError;
 use crate::remote::{RemoteObject, RemoteTarget, first_storage, list_remote_objects, resolve_path};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LsReport {
     pub path: String,
-    pub storage_id: u32,
+    pub storage_id: u64,
     pub entries: Vec<LsEntry>,
 }
 
@@ -17,6 +17,7 @@ pub fn run_ls(
     serial: Option<&str>,
     auto_connect: bool,
     remote_path: &str,
+    take_over: bool,
 ) -> Result<LsReport, AppError> {
     let policy = if auto_connect {
         MtpOpenPolicy::AutoSwitch
@@ -25,14 +26,16 @@ pub fn run_ls(
     };
 
     block_on(async {
-        let session = open_mtp_session(serial, policy).await?;
-        let result = read_ls(&session.device, remote_path).await;
-        let close_result = session.close().await;
-
-        match (result, close_result) {
-            (Ok(report), Ok(())) => Ok(report),
-            (Err(error), _) => Err(error),
-            (Ok(_), Err(error)) => Err(error),
+        let session = open_mtp_session_with_takeover(serial, policy, take_over).await?;
+        match read_ls(&session.device, remote_path).await {
+            Ok(report) => {
+                session.release().await?;
+                Ok(report)
+            }
+            Err(error) => {
+                let _ = session.release().await;
+                Err(error)
+            }
         }
     })
 }

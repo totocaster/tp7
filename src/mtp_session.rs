@@ -1,16 +1,19 @@
 use std::future::Future;
+use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use mtp_rs::MtpDevice;
 
 use crate::device::{
-    TP7_PRODUCT_ID, TP7_VENDOR_ID, Tp7Device, UsbMode, list_tp7_devices, select_one_device,
+    TP7_MTP_PRODUCT_ID, TP7_VENDOR_ID, Tp7Device, UsbMode, list_tp7_devices, select_one_device,
 };
 use crate::midi::{MidiSwitchReport, switch_tp7_to_mtp};
 use crate::output::AppError;
+use crate::usb_owner::{inspect_tp7_usb_owners, ptpcamerad_exclusive_owner_pids};
 
-pub const KNOWN_TP7: &[(u16, u16)] = &[(TP7_VENDOR_ID, TP7_PRODUCT_ID)];
+pub const KNOWN_TP7: &[(u16, u16)] = &[(TP7_VENDOR_ID, TP7_MTP_PRODUCT_ID)];
+const TP7_SESSION_ID: u32 = 0xBAAA_AAAD;
 
 #[derive(Debug, Clone, Copy)]
 pub enum MtpOpenPolicy {
@@ -33,9 +36,21 @@ pub struct MtpSession {
 }
 
 impl MtpSession {
-    pub async fn close(self) -> Result<(), AppError> {
+    /// Leave the device-side session open and let CLI process exit reclaim USB handles.
+    pub async fn release(self) -> Result<(), AppError> {
+        std::mem::forget(self);
+        Ok(())
+    }
+
+    /// Explicitly close the device-side session for `tp7 eject`.
+    pub async fn eject(self) -> Result<(), AppError> {
         self.device.close().await.map_err(map_mtp_error)
     }
+}
+
+/// Release a validation connection without sending the TP-7 `CloseSession`.
+pub fn release_mtp_device(device: MtpDevice) {
+    std::mem::forget(device);
 }
 
 pub fn block_on<T, F>(future: F) -> Result<T, AppError>
@@ -123,6 +138,69 @@ pub async fn open_mtp_session(
     open_prepared_mtp_session(prepared).await
 }
 
+pub async fn open_mtp_session_with_takeover(
+    serial: Option<&str>,
+    policy: MtpOpenPolicy,
+    take_over: bool,
+) -> Result<MtpSession, AppError> {
+    let prepared = prepare_mtp_device(serial, policy)?;
+    let first_open = open_prepared_mtp_session(prepared.clone()).await;
+
+    match first_open {
+        Err(error @ AppError::MtpExclusiveAccess { .. }) if take_over => {
+            if !take_over_from_ptpcamerad()? {
+                return Err(error);
+            }
+
+            retry_open_prepared_mtp_session(prepared, Duration::from_secs(2)).await
+        }
+        result => result,
+    }
+}
+
+async fn retry_open_prepared_mtp_session(
+    prepared: PreparedMtpDevice,
+    timeout: Duration,
+) -> Result<MtpSession, AppError> {
+    let deadline = Instant::now() + timeout;
+
+    loop {
+        match open_prepared_mtp_session(prepared.clone()).await {
+            Err(AppError::MtpExclusiveAccess { .. }) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(100));
+            }
+            result => return result,
+        }
+    }
+}
+
+fn take_over_from_ptpcamerad() -> Result<bool, AppError> {
+    let owners = inspect_tp7_usb_owners()?;
+    let pids = ptpcamerad_exclusive_owner_pids(&owners);
+
+    if pids.is_empty() {
+        return Ok(false);
+    }
+
+    for pid in pids {
+        log::warn!("terminating ptpcamerad process {pid} to claim the TP-7 MTP interface");
+        let status = Command::new("/bin/kill")
+            .args(["-KILL", &pid.to_string()])
+            .status()
+            .map_err(|error| AppError::MtpTakeover {
+                message: format!("could not terminate ptpcamerad process {pid}: {error}"),
+            })?;
+
+        if !status.success() {
+            return Err(AppError::MtpTakeover {
+                message: format!("could not terminate ptpcamerad process {pid}: {status}"),
+            });
+        }
+    }
+
+    Ok(true)
+}
+
 pub async fn open_prepared_mtp_session(
     prepared: PreparedMtpDevice,
 ) -> Result<MtpSession, AppError> {
@@ -132,21 +210,33 @@ pub async fn open_prepared_mtp_session(
 }
 
 pub async fn open_mtp_device(serial: Option<&str>) -> Result<MtpDevice, AppError> {
-    match serial {
+    let device = match serial {
         Some(serial) => {
             MtpDevice::builder()
                 .known_devices(KNOWN_TP7)
+                .reuse_existing_session(TP7_SESSION_ID)
                 .open_by_serial(serial)
                 .await
         }
         None => {
             MtpDevice::builder()
                 .known_devices(KNOWN_TP7)
+                .reuse_existing_session(TP7_SESSION_ID)
                 .open_first()
                 .await
         }
     }
-    .map_err(map_mtp_error)
+    .map_err(map_mtp_error)?;
+
+    initialize_tp7_session(&device).await?;
+
+    Ok(device)
+}
+
+async fn initialize_tp7_session(device: &MtpDevice) -> Result<(), AppError> {
+    device.storages().await.map_err(map_mtp_error)?;
+
+    Ok(())
 }
 
 pub fn map_mtp_error(error: mtp_rs::Error) -> AppError {

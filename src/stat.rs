@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::mtp_session::{MtpOpenPolicy, block_on, open_mtp_session};
 use crate::output::AppError;
-use crate::remote::{RemoteObject, RemoteTarget, first_storage, resolve_path};
+use crate::remote::{RemoteObject, RemoteTarget, first_storage, format_datetime, resolve_path};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatReport {
@@ -27,9 +27,9 @@ pub fn run_stat(
     block_on(async {
         let session = open_mtp_session(serial, policy).await?;
         let result = read_stat(&session.device, remote_path).await;
-        let close_result = session.close().await;
+        let release_result = session.release().await;
 
-        match (result, close_result) {
+        match (result, release_result) {
             (Ok(report), Ok(())) => Ok(report),
             (Err(error), _) => Err(error),
             (Ok(_), Err(error)) => Err(error),
@@ -44,9 +44,12 @@ async fn read_stat(device: &mtp_rs::MtpDevice, remote_path: &str) -> Result<Stat
         return Err(AppError::RemotePathIsRoot);
     };
 
-    let format = format!("{:?}", object.format);
-    let format_code = format!("0x{:04x}", u16::from(object.format));
-    let created = object.created.and_then(|created| created.format());
+    let format = format!(
+        "{:?}",
+        mtp_rs::ptp::ObjectFormatCode::from(object.format.code())
+    );
+    let format_code = format!("0x{:04x}", object.format.code());
+    let created = object.created.map(format_datetime);
     let remote_object = RemoteObject::from_object(object);
 
     Ok(StatReport {
@@ -60,24 +63,39 @@ async fn read_stat(device: &mtp_rs::MtpDevice, remote_path: &str) -> Result<Stat
 
 #[cfg(test)]
 mod tests {
-    use mtp_rs::ptp::{DateTime, ObjectFormatCode, ObjectHandle, ObjectInfo, StorageId};
+    use mtp_rs::{DateTime, ObjectFormat, ObjectHandle, ObjectInfo, StorageId};
 
     use super::*;
 
     #[test]
     fn builds_stat_report_from_object_info() {
-        let object = ObjectInfo {
-            handle: ObjectHandle(1),
-            storage_id: StorageId(65_537),
-            format: ObjectFormatCode::Association,
-            filename: "recordings".to_string(),
-            created: Some(DateTime::new(2024, 1, 26, 14, 20, 0).unwrap()),
-            modified: Some(DateTime::new(2026, 5, 7, 12, 0, 0).unwrap()),
-            ..Default::default()
-        };
-        let format = format!("{:?}", object.format);
-        let format_code = format!("0x{:04x}", u16::from(object.format));
-        let created = object.created.and_then(|created| created.format());
+        let mut object = ObjectInfo::default();
+        object.handle = ObjectHandle(1);
+        object.storage_id = StorageId(65_537);
+        object.format = ObjectFormat::ASSOCIATION;
+        object.filename = "recordings".to_string();
+        object.created = Some(DateTime {
+            year: 2024,
+            month: 1,
+            day: 26,
+            hour: 14,
+            minute: 20,
+            second: 0,
+        });
+        object.modified = Some(DateTime {
+            year: 2026,
+            month: 5,
+            day: 7,
+            hour: 12,
+            minute: 0,
+            second: 0,
+        });
+        let format = format!(
+            "{:?}",
+            mtp_rs::ptp::ObjectFormatCode::from(object.format.code())
+        );
+        let format_code = format!("0x{:04x}", object.format.code());
+        let created = object.created.map(format_datetime);
         let remote_object = RemoteObject::from_object(object);
         let report = StatReport {
             path: "/recordings".to_string(),

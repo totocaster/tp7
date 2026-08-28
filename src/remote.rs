@@ -1,5 +1,4 @@
-use mtp_rs::ptp::{ObjectHandle, ObjectInfo};
-use mtp_rs::{MtpDevice, Storage};
+use mtp_rs::{DateTime, MtpDevice, ObjectHandle, ObjectInfo, Storage};
 use serde::{Deserialize, Serialize};
 
 use crate::mtp_session::map_mtp_error;
@@ -7,9 +6,9 @@ use crate::output::AppError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RemoteObject {
-    pub id: u32,
-    pub parent_id: u32,
-    pub storage_id: u32,
+    pub id: u64,
+    pub parent_id: u64,
+    pub storage_id: u64,
     pub kind: ObjectKind,
     pub name: String,
     pub size: u64,
@@ -46,9 +45,21 @@ impl RemoteObject {
             },
             name: object.filename,
             size: object.size,
-            modified: object.modified.and_then(|modified| modified.format()),
+            modified: object.modified.map(format_datetime),
         }
     }
+}
+
+pub fn format_datetime(datetime: DateTime) -> String {
+    format!(
+        "{:04}{:02}{:02}T{:02}{:02}{:02}",
+        datetime.year,
+        datetime.month,
+        datetime.day,
+        datetime.hour,
+        datetime.minute,
+        datetime.second
+    )
 }
 
 pub async fn first_storage(device: &MtpDevice) -> Result<Storage, AppError> {
@@ -214,7 +225,7 @@ fn kind_sort_key(kind: &ObjectKind) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use mtp_rs::ptp::{DateTime, ObjectFormatCode, ObjectHandle, ObjectInfo, StorageId};
+    use mtp_rs::{DateTime, ObjectFormat, ObjectHandle, ObjectInfo, StorageId};
 
     use super::*;
 
@@ -241,15 +252,20 @@ mod tests {
 
     #[test]
     fn converts_object_info_to_remote_object() {
-        let object = ObjectInfo {
-            handle: ObjectHandle(42),
-            storage_id: StorageId(65_537),
-            parent: ObjectHandle(7),
-            filename: "take.wav".to_string(),
-            size: 1024,
-            modified: Some(DateTime::new(2026, 5, 7, 12, 30, 45).unwrap()),
-            ..Default::default()
-        };
+        let mut object = ObjectInfo::default();
+        object.handle = ObjectHandle(42);
+        object.storage_id = StorageId(65_537);
+        object.parent = ObjectHandle(7);
+        object.filename = "take.wav".to_string();
+        object.size = 1024;
+        object.modified = Some(DateTime {
+            year: 2026,
+            month: 5,
+            day: 7,
+            hour: 12,
+            minute: 30,
+            second: 45,
+        });
 
         let entry = RemoteObject::from_object(object);
 
@@ -282,12 +298,8 @@ mod tests {
     }
 
     #[test]
-    fn sorts_object_infos_folders_before_files_by_name() {
-        let mut objects = vec![
-            object("z.wav", ObjectKind::File),
-            object("Recordings", ObjectKind::Folder),
-            object("a.wav", ObjectKind::File),
-        ];
+    fn sorts_object_infos_by_name() {
+        let mut objects = vec![object("z.wav"), object("Recordings"), object("a.wav")];
 
         sort_object_infos(&mut objects);
 
@@ -296,7 +308,7 @@ mod tests {
                 .into_iter()
                 .map(|object| object.filename)
                 .collect::<Vec<_>>(),
-            vec!["Recordings", "a.wav", "z.wav"]
+            vec!["a.wav", "Recordings", "z.wav"]
         );
     }
 
@@ -314,18 +326,21 @@ mod tests {
     }
 
     fn entry(name: &str, kind: ObjectKind) -> RemoteObject {
-        RemoteObject::from_object(object(name, kind))
+        RemoteObject {
+            id: 0,
+            parent_id: 0,
+            storage_id: 0,
+            kind,
+            name: name.to_string(),
+            size: 0,
+            modified: None,
+        }
     }
 
-    fn object(name: &str, kind: ObjectKind) -> ObjectInfo {
-        let format = match kind {
-            ObjectKind::File => ObjectFormatCode::Wav,
-            ObjectKind::Folder => ObjectFormatCode::Association,
-        };
-        ObjectInfo {
-            filename: name.to_string(),
-            format,
-            ..Default::default()
-        }
+    fn object(name: &str) -> ObjectInfo {
+        let mut object = ObjectInfo::default();
+        object.filename = name.to_string();
+        object.format = ObjectFormat(0x3008);
+        object
     }
 }

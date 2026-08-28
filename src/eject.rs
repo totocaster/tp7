@@ -32,7 +32,7 @@ pub fn run_eject(serial: Option<&str>, auto_connect: bool) -> Result<EjectReport
             message: "MTP session opened and closed cleanly.".to_string(),
         };
 
-        session.close().await?;
+        session.eject().await?;
         Ok(report)
     })
 }

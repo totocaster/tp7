@@ -1,6 +1,4 @@
-use mtp_rs::ResponseCode;
-use mtp_rs::Storage;
-use mtp_rs::ptp::ObjectHandle;
+use mtp_rs::{ObjectHandle, ObjectInfo, Storage};
 use serde::{Deserialize, Serialize};
 
 use crate::mtp_session::{MtpOpenPolicy, block_on, map_mtp_error, open_mtp_session};
@@ -41,9 +39,9 @@ pub fn run_mkdir(
     block_on(async {
         let session = open_mtp_session(serial, policy).await?;
         let result = write_mkdir(&session.device, remote_path, parents).await;
-        let close_result = session.close().await;
+        let release_result = session.release().await;
 
-        match (result, close_result) {
+        match (result, release_result) {
             (Ok(report), Ok(())) => Ok(report),
             (Err(error), _) => Err(error),
             (Ok(_), Err(error)) => Err(error),
@@ -63,9 +61,9 @@ pub fn run_rename(
     block_on(async {
         let session = open_mtp_session(serial, policy).await?;
         let result = write_rename(&session.device, remote_path, new_name).await;
-        let close_result = session.close().await;
+        let release_result = session.release().await;
 
-        match (result, close_result) {
+        match (result, release_result) {
             (Ok(report), Ok(())) => Ok(report),
             (Err(error), _) => Err(error),
             (Ok(_), Err(error)) => Err(error),
@@ -86,9 +84,9 @@ pub fn run_rm(
     block_on(async {
         let session = open_mtp_session(serial, policy).await?;
         let result = write_rm(&session.device, remote_path, recursive, force, dry_run).await;
-        let close_result = session.close().await;
+        let release_result = session.release().await;
 
-        match (result, close_result) {
+        match (result, release_result) {
             (Ok(report), Ok(())) => Ok(report),
             (Err(error), _) => Err(error),
             (Ok(_), Err(error)) => Err(error),
@@ -227,7 +225,7 @@ async fn find_child(
     storage: &Storage,
     parent: Option<ObjectHandle>,
     name: &str,
-) -> Result<Option<mtp_rs::ptp::ObjectInfo>, AppError> {
+) -> Result<Option<ObjectInfo>, AppError> {
     Ok(list_object_infos(storage, parent)
         .await?
         .into_iter()
@@ -270,15 +268,12 @@ fn renamed_path(old_path: &str, new_name: &str) -> String {
 }
 
 fn map_create_folder_error(error: mtp_rs::Error) -> AppError {
-    match error.response_code() {
-        Some(
-            ResponseCode::GeneralError
-            | ResponseCode::OperationNotSupported
-            | ResponseCode::StoreReadOnly
-            | ResponseCode::AccessDenied,
-        ) => AppError::MtpUnsupported {
-            message: format!("TP-7 rejected folder creation ({error})"),
-        },
+    match error {
+        mtp_rs::Error::Unsupported | mtp_rs::Error::AccessDenied | mtp_rs::Error::Other { .. } => {
+            AppError::MtpUnsupported {
+                message: format!("TP-7 rejected folder creation ({error})"),
+            }
+        }
         _ => map_mtp_error(error),
     }
 }
@@ -291,6 +286,18 @@ mod tests {
     fn rejects_invalid_remote_names() {
         assert!(validate_remote_name("../x").is_err());
         assert!(validate_remote_name("").is_err());
+    }
+
+    #[test]
+    fn maps_tp7_general_folder_error_to_unsupported() {
+        let error = mtp_rs::Error::Other {
+            detail: "GeneralError".to_string(),
+        };
+
+        assert!(matches!(
+            map_create_folder_error(error),
+            AppError::MtpUnsupported { .. }
+        ));
     }
 
     #[test]

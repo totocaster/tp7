@@ -29,7 +29,10 @@ Device identity:
 - Product: `TP-7`
 - Vendor string: `teenage engineering`
 - Vendor ID: `0x2367`
-- Product ID: `0x0019`
+- Product IDs: `0x0019` in the original observation; `0x8019` for the
+  audio/MIDI personality on another observed unit. The latter re-enumerates as
+  `0x0019` in MTP mode, so interface descriptors remain the authoritative mode
+  signal.
 - Serial: `F1RTL11C`
 - USB speed: high speed, 480 Mbps
 - USB version: 2.0
@@ -209,7 +212,7 @@ Open validation tasks:
 
 - Confirmed: `mtp-rs` can open the TP-7 once it is in MTP mode.
 - Confirm object listing and transfers work with TP-7 recordings.
-- Confirm whether `mtp-rs` exposes all required operations or whether we need small extensions.
+- Confirmed: `mtp-rs` 0.32.0 includes the TP-7 session-reuse API upstream, so no vendored fork is required.
 - Confirm whether `nusb` can handle any macOS device ownership edge cases cleanly.
 
 Validated MTP status from `mtp-rs`:
@@ -223,6 +226,11 @@ Validated MTP status from `mtp-rs`:
 - Storage id: `65537`
 - Capacity: `120244404224` bytes
 - Free space observed: `112986914816` bytes
+
+`mtp-rs` 0.32.0 moved its high-level API to backend-neutral device and storage
+metadata. The CLI keeps the existing JSON keys for vendor-extension text and
+free object counts, but reports them as `null` because those protocol-specific
+values are no longer exposed by that API.
 
 ## Go Tooling Considered
 
@@ -280,6 +288,9 @@ Useful flags:
 - `-t, --sort-time`: sort by modified time, newest first.
 - `-r, --reverse`: reverse listing order.
 - `-i, --ids`: show MTP object IDs.
+- `--take-over`: after an exclusive-access failure, terminate and retry only
+  when macOS reports `ptpcamerad` as the exclusive owner of the TP-7 MTP
+  interface. Other owners remain untouched.
 - `--json`
 
 `tp7 tree [remote-path]`
@@ -511,7 +522,7 @@ MTP semantics:
 
 Library risk:
 
-- `mtp-rs` may need fixes or extensions for TP-7 quirks.
+- Future TP-7 quirks may still require upstream `mtp-rs` fixes or extensions.
 - `libmtp` fallback is likely reliable but adds C dependency and licensing considerations.
 
 Mount risk:
@@ -525,7 +536,7 @@ Mount risk:
 - Teenage Engineering TP-7 product page: <https://teenage.engineering/products/tp-7>
 - Teenage Engineering TP-7 downloads/release notes: <https://teenage.engineering/downloads/tp-7>
 - Microsoft MTP extensions overview: <https://learn.microsoft.com/en-us/windows/win32/wpd_sdk/supporting-mtp-extensions>
-- `mtp-rs` crate docs: <https://docs.rs/crate/mtp-rs/0.11.0>
+- `mtp-rs` crate docs: <https://docs.rs/crate/mtp-rs/0.32.0>
 - `fuser` crate docs: <https://docs.rs/fuser>
 - macFUSE: <https://macfuse.github.io/>
 - Fuse-T: <https://www.fuse-t.org/>
